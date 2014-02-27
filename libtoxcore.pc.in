@@ -9,4 +9,3 @@ Requires:
 Version: @PACKAGE_VERSION@
 Libs: -L${libdir} -ltoxcore @LIBS@
 Cflags: -I${includedir}
-

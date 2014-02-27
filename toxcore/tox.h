@@ -128,6 +128,13 @@ TOX_USERSTATUS;
 typedef struct Tox Tox;
 #endif
 
+/* NOTE: Strings in Tox are all UTF-8, also the last byte in all strings must be NULL (0).
+ *
+ * The length when passing those strings to the core includes that NULL character.
+ *
+ * If you send non NULL terminated strings Tox will force NULL terminates them when it receives them.
+ */
+
 /*  return TOX_FRIEND_ADDRESS_SIZE byte address to give to others.
  * format: [client_id (32 bytes)][nospam number (4 bytes)][checksum (2 bytes)]
  */
@@ -274,6 +281,21 @@ int tox_get_self_status_message(Tox *tox, uint8_t *buf, uint32_t maxlen);
 TOX_USERSTATUS tox_get_user_status(Tox *tox, int friendnumber);
 TOX_USERSTATUS tox_get_self_user_status(Tox *tox);
 
+/* Set our typing status for a friend.
+ * You are responsible for turning it on or off.
+ *
+ * returns 0 on success.
+ * returns -1 on failure.
+ */
+int tox_set_user_is_typing(Tox *tox, int friendnumber, uint8_t is_typing);
+
+/* Get the typing status of a friend.
+ *
+ * returns 0 if friend is not typing.
+ * returns 1 if friend is typing.
+ */
+int tox_get_is_typing(Tox *tox, int friendnumber);
+
 /* Sets whether we send read receipts for friendnumber.
  * This function is not lazy, and it will fail if yesno is not (0 or 1).
  */
@@ -283,6 +305,9 @@ void tox_set_sends_receipts(Tox *tox, int friendnumber, int yesno);
  * You should use this to determine how much memory to allocate
  * for copy_friendlist. */
 uint32_t tox_count_friendlist(Tox *tox);
+
+/* Return the number of online friends in the instance m. */
+uint32_t tox_get_num_online_friends(Tox *tox);
 
 /* Copy a list of valid friend IDs into the array out_list.
  * If out_list is NULL, returns 0.
@@ -325,6 +350,11 @@ void tox_callback_status_message(Tox *tox, void (*function)(Tox *tox, int, uint8
  *  function(int friendnumber, USERSTATUS kind)
  */
 void tox_callback_user_status(Tox *tox, void (*function)(Tox *tox, int, TOX_USERSTATUS, void *), void *userdata);
+
+/* Set the callback for typing changes.
+ *  function (int friendnumber, int is_typing)
+ */
+void tox_callback_typing_change(Tox *tox, void (*function)(Tox *tox, int, int, void *), void *userdata);
 
 /* Set the callback for read receipts.
  *  function(int friendnumber, uint32_t receipt)

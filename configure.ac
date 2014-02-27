@@ -13,8 +13,7 @@ AC_CONFIG_MACRO_DIR([m4])
 EXTRA_LT_LDFLAGS=
 
 LIBTOXCORE_LT_VERSION=0:0:0
-LIBTOXMSI_LT_VERSION=0:0:0
-LIBTOXRTP_LT_VERSION=0:0:0
+LIBTOXAV_LT_VERSION=0:0:0
 dnl
 dnl            current:revision:age
 dnl
@@ -23,28 +22,38 @@ dnl revision: increment if source code has changed, set to zero if current is
 dnl           incremented
 dnl age:      increment if interfaces have been added, set to zero if
 dnl           interfaces have been removed or changed
-TOXCORE_LT_LDFLAGS="-version-info $LIBTOXCORE_LT_VERSION"
-TOXMSI_LT_LDFLAGS="-version-info $LIBTOXMSI_LT_VERSION"
-TOXRTP_LT_LDFLAGS="-version-info $LIBTOXMSI_LT_VERSION"
-
-AC_SUBST(TOXCORE_LT_LDFLAGS)
-AC_SUBST(TOXMSI_LT_LDFLAGS)
-AC_SUBST(TOXRTP_LT_LDFLAGS)
 
 if test "x${prefix}" = "xNONE"; then
     prefix="${ac_default_prefix}"
 fi
 
-BUILD_DHT_BOOTSTRAP_DAEMON="yes"
-BUILD_NTOX="yes"
+BUILD_DHT_BOOTSTRAP_DAEMON="no"
+BUILD_NTOX="no"
 BUILD_TESTS="yes"
 BUILD_AV="yes"
+BUILD_PHONE="no"
 BUILD_TESTING="yes"
 
 NCURSES_FOUND="no"
 LIBCONFIG_FOUND="no"
 LIBCHECK_FOUND="no"
 WANT_NACL="no"
+
+TOXCORE_LT_LDFLAGS="-version-info $LIBTOXCORE_LT_VERSION"
+TOXAV_LT_LDFLAGS="-version-info $LIBTOXAV_LT_VERSION"
+
+AC_ARG_ENABLE([soname-versions],
+    [AC_HELP_STRING([--enable-soname-versions], [enable soname versions (must be disabled for android) (default: enabled)]) ],
+    [
+        if test "x$enableval" = "xno"; then
+            TOXCORE_LT_LDFLAGS="-avoid-version"
+            TOXAV_LT_LDFLAGS="-avoid-version"
+        fi
+    ]
+)
+
+AC_SUBST(TOXCORE_LT_LDFLAGS)
+AC_SUBST(TOXAV_LT_LDFLAGS)
 
 AC_ARG_ENABLE([nacl],
     [AC_HELP_STRING([--enable-nacl], [use nacl instead of libsodium (default: disabled)]) ],
@@ -57,13 +66,39 @@ AC_ARG_ENABLE([nacl],
     ]
 )
 
+AC_ARG_ENABLE([randombytes-stir],
+    [AC_HELP_STRING([--enable-randombytes-stir], [use randombytes_stir() instead of sodium_init() for faster startup on android (default: disabled)]) ],
+    [
+        if test "x$enableval" = "xyes"; then
+            if test "x$WANT_NACL" = "xyes"; then
+                AC_MSG_WARN([randombytes_stir() is not available with NaCl library])
+            else
+                AC_DEFINE([USE_RANDOMBYTES_STIR], [1], [randombytes_stir() instead of sodium_init()])
+            fi
+        fi
+    ]
+)
+
+
 PKG_PROG_PKG_CONFIG
+
+AC_ARG_ENABLE([phone],
+    [AC_HELP_STRING([--enable-phone], [build test phone (default: auto)]) ],
+    [
+        if test "x$enableval" = "xno"; then
+            BUILD_PHONE="no"
+        elif test "x$enableval" = "xyes"; then
+            BUILD_PHONE="yes"
+        fi
+    ]
+)
 
 AC_ARG_ENABLE([av],
     [AC_HELP_STRING([--disable-av], [build AV support libraries (default: auto)]) ],
     [
         if test "x$enableval" = "xno"; then
             BUILD_AV="no"
+            BUILD_PHONE="no"
         elif test "x$enableval" = "xyes"; then
             BUILD_AV="yes"
         fi
@@ -82,7 +117,7 @@ AC_ARG_ENABLE([tests],
 )
 
 AC_ARG_ENABLE([ntox],
-    [AC_HELP_STRING([--disable-ntox], [build nTox client (default: auto)]) ],
+    [AC_HELP_STRING([--enable-ntox], [build nTox client (default: auto)]) ],
     [
         if test "x$enableval" = "xno"; then
             BUILD_NTOX="no"
@@ -92,8 +127,8 @@ AC_ARG_ENABLE([ntox],
     ]
 )
 
-AC_ARG_ENABLE([dht-bootstrap-daemon],
-    [AC_HELP_STRING([--disable-dht-bootstrap-daemon], [build DHT bootstrap daemon (default: auto)]) ],
+AC_ARG_ENABLE([daemon],
+    [AC_HELP_STRING([--enable-daemon], [build DHT bootstrap daemon (default: auto)]) ],
     [
         if test "x$enableval" = "xno"; then
             BUILD_DHT_BOOTSTRAP_DAEMON="no"
@@ -333,6 +368,8 @@ AC_TYPE_UINT16_T
 AC_TYPE_UINT32_T
 AC_TYPE_UINT64_T
 AC_TYPE_UINT8_T
+AC_C_BIGENDIAN
+
 
 # Checks for library functions.
 AC_FUNC_FORK
@@ -344,78 +381,85 @@ if test "x$BUILD_AV" = "xyes"; then
         [
             AC_MSG_WARN([disabling AV support: required pthread library not found])
             BUILD_AV="no"
+            BUILD_PHONE="no"
         ]
     )
 fi
 
-if test "x$BUILD_AV" = "xyes"; then
+if test "x$BUILD_PHONE" = "xyes"; then
     PKG_CHECK_MODULES([AVFORMAT], [libavformat],
         [],
         [
-            AC_MSG_WARN([disabling AV support $AVFORMAT_PKG_ERRORS])
-            BUILD_AV="no"
+            AC_MSG_WARN([disabling phone $AVFORMAT_PKG_ERRORS])
+            BUILD_PHONE="no"
         ]
     )
 fi
 
-if test "x$BUILD_AV" = "xyes"; then
+if test "x$BUILD_PHONE" = "xyes"; then
     PKG_CHECK_MODULES([AVCODEC], [libavcodec],
         [],
         [
-            AC_MSG_WARN([disabling AV support $AVCODEC_PKG_ERRORS])
-            BUILD_AV="no"
+            AC_MSG_WARN([disabling phone $AVCODEC_PKG_ERRORS])
+            BUILD_PHONE="no"
         ]
     )
 fi
 
-if test "x$BUILD_AV" = "xyes"; then
+if test "x$BUILD_PHONE" = "xyes"; then
     PKG_CHECK_MODULES([AVUTIL], [libavutil],
         [],
         [
-            AC_MSG_WARN([disabling AV support $AVUTIL_PKG_ERRORS])
-            BUILD_AV="no"
+            AC_MSG_WARN([disabling phone $AVUTIL_PKG_ERRORS])
+            BUILD_PHONE="no"
         ]
     )
 fi
 
-if test "x$BUILD_AV" = "xyes"; then
+if test "x$BUILD_PHONE" = "xyes"; then
     PKG_CHECK_MODULES([AVDEVICE], [libavdevice],
         [],
         [
-            AC_MSG_WARN([disabling AV support $AVDEVICE_PKG_ERRORS])
-            BUILD_AV="no"
+            AC_MSG_WARN([disabling phone $AVDEVICE_PKG_ERRORS])
+            BUILD_PHONE="no"
         ]
     )
 fi
 
-if test "x$BUILD_AV" = "xyes"; then
+if test "x$BUILD_PHONE" = "xyes"; then
     PKG_CHECK_MODULES([SWSCALE], [libswscale],
         [],
         [
-            AC_MSG_WARN([disabling AV support $SWSCALE_PKG_ERRORS])
-            BUILD_AV="no"
+            AC_MSG_WARN([disabling phone $SWSCALE_PKG_ERRORS])
+            BUILD_PHONE="no"
         ]
     )
 fi
 
-if test "x$BUILD_AV" = "xyes"; then
+if test "x$BUILD_PHONE" = "xyes"; then
     PKG_CHECK_MODULES([SDL], [sdl],
         [],
         [
-            AC_MSG_WARN([disabling AV support $SDL_PKG_ERRORS])
-            BUILD_AV="no"
+            AC_MSG_WARN([disabling phone $SDL_PKG_ERRORS])
+            BUILD_PHONE="no"
         ]
     )
 fi
 
-if test "x$BUILD_AV" = "xyes"; then
+if test "x$BUILD_PHONE" = "xyes"; then
     PKG_CHECK_MODULES([OPENAL], [openal],
         [],
         [
-            AC_MSG_WARN([disabling AV support $OPENAL_PKG_ERRORS])
-            BUILD_AV="no"
+            AC_MSG_WARN([disabling phone $OPENAL_PKG_ERRORS])
+            BUILD_PHONE="no"
         ]
     )
+fi
+
+#If all dependencies are here add support video define for phone.c
+if test "x$BUILD_PHONE" == "xyes"; then
+    #Set FFMpeg define
+    AC_DEFINE([TOX_FFMPEG], [1], [Support video])
 fi
 
 if test "x$BUILD_AV" = "xyes"; then
@@ -424,8 +468,30 @@ if test "x$BUILD_AV" = "xyes"; then
         [
             AC_MSG_WARN([disabling AV support $OPUS_PKG_ERRORS])
             BUILD_AV="no"
+            BUILD_PHONE="no"
         ]
     )
+fi
+
+if test "x$BUILD_AV" = "xyes"; then
+    PKG_CHECK_MODULES([VPX], [vpx],
+        [],
+        [
+            AC_MSG_WARN([disabling AV support $VPX_PKG_ERRORS])
+            BUILD_AV="no"
+            BUILD_PHONE="no"
+        ]
+    )
+fi
+
+if test "x$BUILD_AV" = "xyes"; then
+    # toxcore lib needs an global?
+    # So far this works okay
+    AV_LIBS="$OPUS_LIBS $VPX_LIBS -ltoxcore"
+    AC_SUBST(AV_LIBS)
+    
+    AV_CFLAGS="$OPUS_CFLAGS $VPX_CFLAGS"
+    AC_SUBST(AV_CFLAGS)
 fi
 
 if test -n "$PKG_CONFIG"; then
@@ -586,6 +652,7 @@ AM_CONDITIONAL(BUILD_DHT_BOOTSTRAP_DAEMON, test "x$BUILD_DHT_BOOTSTRAP_DAEMON" =
 AM_CONDITIONAL(BUILD_TESTS, test "x$BUILD_TESTS" = "xyes")
 AM_CONDITIONAL(BUILD_NTOX, test "x$BUILD_NTOX" = "xyes")
 AM_CONDITIONAL(BUILD_AV, test "x$BUILD_AV" = "xyes")
+AM_CONDITIONAL(BUILD_PHONE, test "x$BUILD_PHONE" = "xyes")
 AM_CONDITIONAL(BUILD_TESTING, test "x$BUILD_TESTING" = "xyes")
 AM_CONDITIONAL(WIN32, test "x$WIN32" = "xyes")
 
@@ -593,4 +660,10 @@ AC_CONFIG_FILES([Makefile
                  build/Makefile
                  libtoxcore.pc
                 ])
+                    
+AM_COND_IF(BUILD_AV,
+  [
+    AC_CONFIG_FILES([libtoxav.pc])
+  ],)
+
 AC_OUTPUT

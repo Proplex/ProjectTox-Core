@@ -42,6 +42,7 @@
 #define PACKET_ID_NICKNAME 48
 #define PACKET_ID_STATUSMESSAGE 49
 #define PACKET_ID_USERSTATUS 50
+#define PACKET_ID_TYPING 51
 #define PACKET_ID_RECEIPT 65
 #define PACKET_ID_MESSAGE 64
 #define PACKET_ID_ACTION 63
@@ -145,6 +146,9 @@ typedef struct {
     uint8_t statusmessage_sent;
     USERSTATUS userstatus;
     uint8_t userstatus_sent;
+    uint8_t user_istyping;
+    uint8_t user_istyping_sent;
+    uint8_t is_typing;
     uint16_t info_size; // Length of the info.
     uint32_t message_id; // a semi-unique id used in read receipts.
     uint8_t receives_read_receipts; // shall we send read receipts to this person?
@@ -155,7 +159,14 @@ typedef struct {
     struct File_Transfers file_receiving[MAX_CONCURRENT_FILE_PIPES];
     int invited_groups[MAX_INVITED_GROUPS];
     uint16_t invited_groups_num;
+
+    Packet_Handles packethandlers[TOTAL_USERPACKETS];
 } Friend;
+
+typedef struct {
+    uint32_t friend_num;
+    IP_Port ip_port;
+} Online_Friend;
 
 typedef struct Messenger {
 
@@ -179,6 +190,9 @@ typedef struct Messenger {
     Friend *friendlist;
     uint32_t numfriends;
 
+    Online_Friend *online_friendlist;
+    uint32_t numonline_friends;
+
     Group_Chat **chats;
     uint32_t numchats;
 
@@ -194,12 +208,16 @@ typedef struct Messenger {
     void *friend_statusmessagechange_userdata;
     void (*friend_userstatuschange)(struct Messenger *m, int, USERSTATUS, void *);
     void *friend_userstatuschange_userdata;
+    void (*friend_typingchange)(struct Messenger *m, int, int, void *);
+    void *friend_typingchange_userdata;
     void (*read_receipt)(struct Messenger *m, int, uint32_t, void *);
     void *read_receipt_userdata;
     void (*friend_statuschange)(struct Messenger *m, int, uint8_t, void *);
     void *friend_statuschange_userdata;
     void (*friend_connectionstatuschange)(struct Messenger *m, int, uint8_t, void *);
     void *friend_connectionstatuschange_userdata;
+    void (*friend_connectionstatuschange_internal)(struct Messenger *m, int, uint8_t, void *);
+    void *friend_connectionstatuschange_internal_userdata;
 
     void (*group_invite)(struct Messenger *m, int, uint8_t *, void *);
     void *group_invite_userdata;
@@ -386,6 +404,21 @@ int m_copy_self_statusmessage(Messenger *m, uint8_t *buf, uint32_t maxlen);
 USERSTATUS m_get_userstatus(Messenger *m, int friendnumber);
 USERSTATUS m_get_self_userstatus(Messenger *m);
 
+/* Set our typing status for a friend.
+ * You are responsible for turning it on or off.
+ *
+ * returns 0 on success.
+ * returns -1 on failure.
+ */
+int m_set_usertyping(Messenger *m, int friendnumber, uint8_t is_typing);
+
+/* Get the typing status of a friend.
+ *
+ * returns 0 if friend is not typing.
+ * returns 1 if friend is typing.
+ */
+int m_get_istyping(Messenger *m, int friendnumber);
+
 /* Sets whether we send read receipts for friendnumber.
  * This function is not lazy, and it will fail if yesno is not (0 or 1).
  */
@@ -427,6 +460,11 @@ void m_callback_statusmessage(Messenger *m, void (*function)(Messenger *m, int, 
  */
 void m_callback_userstatus(Messenger *m, void (*function)(Messenger *m, int, USERSTATUS, void *), void *userdata);
 
+/* Set the callback for typing changes.
+ *  Function(int friendnumber, int is_typing)
+ */
+void m_callback_typingchange(Messenger *m, void(*function)(Messenger *m, int, int, void *), void *userdata);
+
 /* Set the callback for read receipts.
  *  Function(int friendnumber, uint32_t receipt)
  *
@@ -450,6 +488,9 @@ void m_callback_read_receipt(Messenger *m, void (*function)(Messenger *m, int, u
  *  It's assumed that when adding friends, their connection status is offline.
  */
 void m_callback_connectionstatus(Messenger *m, void (*function)(Messenger *m, int, uint8_t, void *), void *userdata);
+/* Same as previous but for internal A/V core usage only */
+void m_callback_connectionstatus_internal_av(Messenger *m, void (*function)(Messenger *m, int, uint8_t, void *),
+        void *userdata);
 
 /**********GROUP CHATS************/
 
@@ -627,6 +668,22 @@ int m_msi_packet(Messenger *m, int friendnumber, uint8_t *data, uint16_t length)
 
 /**********************************************/
 
+/* Set handlers for custom user packets (RTP packets for example.)
+ *
+ * return -1 on failure.
+ * return 0 on success.
+ */
+int custom_user_packet_registerhandler(Messenger *m, int friendnumber, uint8_t byte, packet_handler_callback cb,
+                                       void *object);
+
+/* High level function to send custom user packets.
+ *
+ * return -1 on failure.
+ * return number of bytes sent on success.
+ */
+int send_custom_user_packet(Messenger *m, int friendnumber, uint8_t *data, uint32_t length);
+
+/**********************************************/
 /* Run this at startup.
  *  return allocated instance of Messenger on success.
  *  return 0 if there are problems.
@@ -681,6 +738,9 @@ int messenger_load_encrypted(Messenger *m, uint8_t *data, uint32_t length, uint8
  * You should use this to determine how much memory to allocate
  * for copy_friendlist. */
 uint32_t count_friendlist(Messenger *m);
+
+/* Return the number of online friends in the instance m. */
+uint32_t get_num_online_friends(Messenger *m);
 
 /* Copy a list of valid friend IDs into the array out_list.
  * If out_list is NULL, returns 0.

@@ -415,8 +415,14 @@ static int at_startup(void)
         return 0;
 
 #ifndef VANILLA_NACL
+
+#ifdef USE_RANDOMBYTES_STIR
+    randombytes_stir();
+#else
     sodium_init();
-#endif
+#endif /*USE_RANDOMBYTES_STIR*/
+
+#endif/*VANILLA_NACL*/
 
 #if defined(_WIN32) || defined(__WIN32__) || defined (WIN32)
     WSADATA wsaData;
@@ -540,8 +546,10 @@ Networking_Core *new_networking(IP ip, uint16_t port)
         addr6->sin6_scope_id = 0;
 
         portptr = &addr6->sin6_port;
-    } else
+    } else {
+        free(temp);
         return NULL;
+    }
 
     if (ip.family == AF_INET6) {
         char ipv6only = 0;
